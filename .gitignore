@@ -1,0 +1,17 @@
+.git
+.idea
+node_modules
+nbproject
+
+# npm package files
+*.tgz
+
+Thumbs.db
+/tmp
+/build
+/coverage
+/.nyc_output
+
+# ignore .commitinfo created by the ioBroker release script
+.commitinfo
+/.claude/settings.local.json

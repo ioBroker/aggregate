@@ -1,0 +1,6 @@
+{
+    "require": ["tsx/cjs", "test/mocha.setup.ts"],
+    "extension": ["ts"],
+    "watch-files": ["src/**/*.ts", "test/**/*.ts"],
+    "timeout": 10000
+}
