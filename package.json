@@ -1,6 +1,9 @@
 {
   "name": "@iobroker/aggregate",
   "version": "0.1.0",
+  "publishConfig": {
+    "access": "public"
+  },
   "description": "Shared data aggregation for the ioBroker history, sql and influxdb adapters",
   "author": "bluefox <dogafox@gmail.com>",
   "contributors": [
