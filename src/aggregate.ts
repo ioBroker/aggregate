@@ -267,6 +267,24 @@ export function aggregation(
 }
 
 /**
+ * Convert the value of a data point into a number that may take part in an aggregation.
+ *
+ * The adapters write a `null` whenever they are started or stopped, so almost every series contains
+ * them. `parseFloat(null)` is `NaN`, and a single `NaN` added to an accumulator poisons the whole
+ * interval - and survives every later `=== null` check afterwards, because `NaN !== null`.
+ *
+ * @param val value of one data point
+ * @returns the value as a finite number, or `null` if it marks a gap and must be skipped
+ */
+function toNumber(val: number | null | undefined): number | null {
+    if (val === null || val === undefined) {
+        return null;
+    }
+    const num = parseFloat(val as unknown as string);
+    return Number.isFinite(num) ? num : null;
+}
+
+/**
  * Execute logic for every entry in the initial series array
  *
  * @param data one data point of the source series
@@ -308,28 +326,38 @@ function aggregationLogic(data: IobDataEntry, index: number, options: InternalHi
         }
     }
 
+    // `null` marks a gap and must never take part in a calculation. Every branch below that consumes
+    // the value has to skip it, otherwise the gap corrupts the result of the whole interval.
+    const num = toNumber(data.val);
+
     if (options.aggregate === 'max') {
-        if (options.processing[index].val.val === null || options.processing[index].val.val < data.val!) {
-            options.processing[index].val.val = data.val;
+        if (num !== null && (options.processing[index].val.val === null || options.processing[index].val.val < num)) {
+            options.processing[index].val.val = num;
         }
     } else if (options.aggregate === 'min') {
-        if (options.processing[index].val.val === null || options.processing[index].val.val > data.val!) {
-            options.processing[index].val.val = data.val;
+        if (num !== null && (options.processing[index].val.val === null || options.processing[index].val.val > num)) {
+            options.processing[index].val.val = num;
         }
     } else if (options.aggregate === 'average') {
-        options.processing[index].val.val! += parseFloat(data.val as unknown as string);
-        options.averageCount![index]++;
+        if (num !== null) {
+            options.processing[index].val.val! += num;
+            options.averageCount![index]++;
+        }
     } else if (options.aggregate === 'count') {
         options.averageCount![index]++;
     } else if (options.aggregate === 'total') {
-        options.processing[index].val.val! += parseFloat(data.val as unknown as string);
+        if (num !== null) {
+            options.processing[index].val.val! += num;
+        }
     } else if (options.aggregate === 'minmax') {
         if (options.processing[index].min.ts === null) {
+            // `min`/`max` keep the timestamp even if the value is a gap, so that the finalisation
+            // can always rely on them being set. The value is corrected by the first real value.
             options.processing[index].min.ts = data.ts;
-            options.processing[index].min.val = data.val;
+            options.processing[index].min.val = num;
 
             options.processing[index].max.ts = data.ts;
-            options.processing[index].max.val = data.val;
+            options.processing[index].max.val = num;
 
             options.processing[index].start.ts = data.ts;
             options.processing[index].start.val = data.val;
@@ -337,19 +365,27 @@ function aggregationLogic(data: IobDataEntry, index: number, options: InternalHi
             options.processing[index].end.ts = data.ts;
             options.processing[index].end.val = data.val;
         } else {
-            if (data.val !== null && data.val !== undefined) {
-                if (data.val > options.processing[index].max.val!) {
-                    options.processing[index].max.ts = data.ts;
-                    options.processing[index].max.val = data.val;
-                } else if (data.val < options.processing[index].min.val!) {
+            if (num !== null) {
+                if (options.processing[index].min.val === null || options.processing[index].max.val === null) {
+                    // the interval started with a gap - the first real value is its minimum and maximum
                     options.processing[index].min.ts = data.ts;
-                    options.processing[index].min.val = data.val;
+                    options.processing[index].min.val = num;
+
+                    options.processing[index].max.ts = data.ts;
+                    options.processing[index].max.val = num;
+                } else if (num > options.processing[index].max.val) {
+                    options.processing[index].max.ts = data.ts;
+                    options.processing[index].max.val = num;
+                } else if (num < options.processing[index].min.val) {
+                    options.processing[index].min.ts = data.ts;
+                    options.processing[index].min.val = num;
                 }
                 if (data.ts > options.processing[index].end.ts!) {
                     options.processing[index].end.ts = data.ts;
                     options.processing[index].end.val = data.val;
                 }
             } else {
+                // a trailing gap is reported as such, but it is neither the minimum nor the maximum
                 if (data.ts > options.processing[index].end.ts!) {
                     options.processing[index].end.ts = data.ts;
                     options.processing[index].end.val = null;
@@ -357,7 +393,9 @@ function aggregationLogic(data: IobDataEntry, index: number, options: InternalHi
             }
         }
     } else if (options.aggregate === 'percentile' || options.aggregate === 'quantile') {
-        options.quantileDataPoints![index].push(data.val || 0);
+        if (num !== null) {
+            options.quantileDataPoints![index].push(num);
+        }
         if (options.logDebug && options.log) {
             options.log(`Quantile ${index}: Add ts= ${data.ts} val=${data.val}`);
         }
@@ -1013,7 +1051,7 @@ function finishAggregationForAverage(options: InternalHistoryOptions): void {
             finalResult.push({
                 ts: options.processing[k].val.ts as number,
                 val:
-                    options.processing[k].val.val !== null
+                    options.processing[k].val.val !== null && options.averageCount![k]
                         ? Math.round(((options.processing[k].val.val as number) / options.averageCount![k]) * round) /
                           round
                         : null,
@@ -1625,7 +1663,12 @@ function getQuantileValue(q: number | null | undefined, list: number[]): number 
  * @param q - quantile or a list of quantiles
  * @param list - array of values
  */
-function quantile(q: number | null | undefined, list: number[]): number {
+function quantile(q: number | null | undefined, list: number[]): number | null {
+    if (!list.length) {
+        // every value of this interval was a gap
+        return null;
+    }
+
     list = list.slice().sort(function (a, b) {
         a = Number.isNaN(a) ? Number.NEGATIVE_INFINITY : a;
         b = Number.isNaN(b) ? Number.NEGATIVE_INFINITY : b;

@@ -256,6 +256,119 @@ describe('aggregation', () => {
     });
 });
 
+describe('aggregation of gaps', () => {
+    // The adapters write a `null` whenever they are started or stopped, so almost every real series
+    // contains gaps. They must not take part in the calculation of the interval they fall into.
+    const base: GetHistoryOptions = {
+        start: 0,
+        end: 1000,
+        step: 100,
+        limit: 2000,
+        removeBorderValues: true,
+    };
+    // one bucket (0..100) with a gap between two real values
+    const withGap: IobDataEntry[] = [
+        { ts: 10, val: 10 },
+        { ts: 20, val: null },
+        { ts: 30, val: 20 },
+    ];
+    const onlyGaps: IobDataEntry[] = [
+        { ts: 10, val: null },
+        { ts: 20, val: null },
+    ];
+
+    it('averages over the real values only', () => {
+        assert.deepStrictEqual(run({ ...base, aggregate: 'average' }, [...withGap]), [{ ts: 50, val: 15 }]);
+    });
+
+    it('does not count a gap into the divisor of the average', () => {
+        // three real values and two gaps: 30 / 3, not 30 / 5
+        assert.deepStrictEqual(
+            run({ ...base, aggregate: 'average' }, [
+                { ts: 10, val: null },
+                { ts: 20, val: 5 },
+                { ts: 30, val: 10 },
+                { ts: 40, val: null },
+                { ts: 50, val: 15 },
+            ]),
+            [{ ts: 50, val: 10 }],
+        );
+    });
+
+    it('sums up the real values only', () => {
+        assert.deepStrictEqual(run({ ...base, aggregate: 'total' }, [...withGap]), [{ ts: 50, val: 30 }]);
+    });
+
+    it('does not let a gap become the minimum', () => {
+        assert.deepStrictEqual(run({ ...base, aggregate: 'min' }, [...withGap]), [{ ts: 50, val: 10 }]);
+    });
+
+    it('does not let a trailing gap reset the minimum', () => {
+        assert.deepStrictEqual(
+            run({ ...base, aggregate: 'min' }, [
+                { ts: 10, val: 10 },
+                { ts: 20, val: 20 },
+                { ts: 30, val: null },
+            ]),
+            [{ ts: 50, val: 10 }],
+        );
+    });
+
+    it('does not let a gap become the maximum', () => {
+        assert.deepStrictEqual(run({ ...base, aggregate: 'max' }, [...withGap]), [{ ts: 50, val: 20 }]);
+    });
+
+    it('reports minmax of the real values after a leading gap', () => {
+        assert.deepStrictEqual(
+            run({ start: 0, end: 1000, step: 1000, limit: 2000, aggregate: 'minmax', removeBorderValues: true }, [
+                { ts: 100, val: null },
+                { ts: 200, val: 10 },
+                { ts: 300, val: 20 },
+            ]),
+            [
+                { ts: 100, val: null },
+                { ts: 200, val: 10 },
+                { ts: 300, val: 20 },
+            ],
+        );
+    });
+
+    it('calculates the percentile over the real values only', () => {
+        // median of 10 and 20, not of 0, 10 and 20
+        assert.deepStrictEqual(run({ ...base, aggregate: 'percentile', percentile: 50 }, [...withGap]), [
+            { ts: 50, val: 15 },
+        ]);
+    });
+
+    it('returns null for an interval that contains gaps only', () => {
+        for (const aggregate of ['average', 'total', 'min', 'max', 'percentile'] as const) {
+            assert.deepStrictEqual(
+                run({ ...base, aggregate }, [...onlyGaps]),
+                [{ ts: 50, val: null }],
+                `aggregate ${aggregate}`,
+            );
+        }
+    });
+
+    it('returns a real null, so that ignoreNull can drop it', () => {
+        // The bug this guards against produced NaN, which passed every `=== null` check unnoticed
+        // and only turned into `null` in `JSON.stringify` - after `ignoreNull` had already run.
+        assert.deepStrictEqual(
+            run({ ...base, aggregate: 'average', ignoreNull: true }, [
+                ...withGap,
+                ...onlyGaps.map(e => ({ ...e, ts: e.ts + 100 })),
+            ]),
+            [{ ts: 50, val: 15 }],
+        );
+    });
+
+    it('returns a real null, so that ignoreNull can replace it with 0', () => {
+        assert.deepStrictEqual(run({ ...base, aggregate: 'average', ignoreNull: 0 }, [...onlyGaps]), [
+            { ts: 50, val: 0 },
+        ]);
+    });
+});
+
 describe('aggregation with quantiles', () => {
     const base: GetHistoryOptions = {
         start: 0,
