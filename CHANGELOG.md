@@ -4,8 +4,7 @@
     Placeholder for the next version (at the beginning of the line):
     ## **WORK IN PROGRESS**
 -->
-
-## **WORK IN PROGRESS**
+## 1.0.0 (2026-08-26)
 - (@joltcoke) Fixed `average` and `total` returning `null` for every interval that contains a `null` value:
   `parseFloat(null)` is `NaN` and poisoned the sum of the whole interval (thanks to @joltcoke,
   ioBroker/ioBroker.sql#526). As the result was `NaN` and not `null`, `ignoreNull` could not act on it either
