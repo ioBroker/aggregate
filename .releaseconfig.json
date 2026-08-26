@@ -2,6 +2,6 @@
     "plugins": ["license"],
     "exec": {
         "before_check": "npm run lint",
-        "before_commit": "npm run build && npm test"
+        "before_commit": ["npm run build", "npm test"]
     }
 }
