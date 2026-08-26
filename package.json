@@ -75,6 +75,8 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
+    "test:package": "echo \"no tests for package\"",
+    "test:integration": "mocha --config test/.mocharc.json \"test/**/*.test.ts\"",
     "prebuild": "node -e \"require('node:fs').rmSync('build', { recursive: true, force: true })\"",
     "check:ts": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint -c eslint.config.mjs",
