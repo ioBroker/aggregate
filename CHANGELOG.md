@@ -4,7 +4,7 @@
     Placeholder for the next version (at the beginning of the line):
     ## **WORK IN PROGRESS**
 -->
-## **WORK IN PROGRESS**
+## 1.0.2 (2026-10-01)
 - (@DutchmanNL) Fixed `average`, `total`, `min`, `max`, `minmax`, `percentile` and `quantile` returning `null` for
   boolean states: they arrive as real `true`/`false`, and `parseFloat(true)` is `NaN`, so a boolean series was
   discarded as if it were all gaps. Booleans now take part in the arithmetic as `1`/`0`
