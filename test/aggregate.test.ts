@@ -427,6 +427,98 @@ describe('aggregation of boolean values', () => {
             [{ ts: 50, val: 1 }],
         );
     });
+
+    it('reports minmax of a boolean series as numbers', () => {
+        // `start` and `end` used to keep the raw value, so a boolean series came back as a mixture of
+        // booleans and numbers - the same symptom the aggregation itself was fixed for
+        const result = run(
+            { start: 0, end: 1000, step: 1000, limit: 2000, aggregate: 'minmax', removeBorderValues: true },
+            [
+                { ts: 100, val: true },
+                { ts: 300, val: false },
+                { ts: 500, val: true },
+                { ts: 700, val: false },
+            ] as unknown as IobDataEntry[],
+        );
+        assert.deepStrictEqual(result, [
+            { ts: 100, val: 1 },
+            { ts: 300, val: 0 },
+            { ts: 700, val: 0 },
+        ]);
+        assert.ok(
+            result.every(entry => typeof entry.val === 'number'),
+            `no entry may stay a boolean, got ${JSON.stringify(result)}`,
+        );
+    });
+
+    it('integrates a boolean series into its on-time', () => {
+        // a switch that is on for the first half hour and off afterwards => 0.5 h of "on"
+        assert.deepStrictEqual(
+            run(
+                {
+                    start: 0,
+                    end: HOUR,
+                    step: HOUR,
+                    limit: 2000,
+                    aggregate: 'integral',
+                    integralUnit: 3600,
+                    integralInterpolation: 'none',
+                    removeBorderValues: true,
+                },
+                [
+                    { ts: 0, val: true },
+                    { ts: HOUR / 2, val: false },
+                ] as unknown as IobDataEntry[],
+            ),
+            [{ ts: HOUR / 2, val: 0.5 }],
+        );
+    });
+
+    it('does not integrate a boolean series to zero', () => {
+        // `integral` reads its values itself and used to do so with a bare `parseFloat`, so every
+        // boolean segment silently contributed 0 - a switch that was on all hour reported no on-time
+        assert.deepStrictEqual(
+            run(
+                {
+                    start: 0,
+                    end: HOUR,
+                    step: HOUR,
+                    limit: 2000,
+                    aggregate: 'integral',
+                    integralUnit: 3600,
+                    integralInterpolation: 'none',
+                    removeBorderValues: true,
+                },
+                [{ ts: 0, val: true }] as unknown as IobDataEntry[],
+            ),
+            [{ ts: HOUR / 2, val: 1 }],
+        );
+    });
+
+    it('integrates the total of a boolean series like the 1/0 series', () => {
+        const options: GetHistoryOptions = {
+            start: 0,
+            end: HOUR,
+            step: HOUR,
+            limit: 2000,
+            aggregate: 'integralTotal',
+            integralUnit: 3600,
+            removeBorderValues: true,
+        };
+        const booleanResult = run(options, [
+            { ts: 0, val: true },
+            { ts: HOUR / 2, val: false },
+        ] as unknown as IobDataEntry[]);
+        assert.deepStrictEqual(booleanResult, [{ ts: HOUR, val: 0.25 }]);
+        // the trapezoid of the equivalent 1/0 series, to pin the two against each other
+        assert.deepStrictEqual(
+            booleanResult,
+            run(options, [
+                { ts: 0, val: 1 },
+                { ts: HOUR / 2, val: 0 },
+            ]),
+        );
+    });
 });
 
 describe('aggregation with quantiles', () => {

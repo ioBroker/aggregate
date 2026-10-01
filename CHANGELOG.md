@@ -5,9 +5,17 @@
     ## **WORK IN PROGRESS**
 -->
 ## **WORK IN PROGRESS**
-- (@DutchmanNL) Fixed every aggregate returning `null` for boolean states: they arrive as real `true`/`false`,
-  and `parseFloat(true)` is `NaN`, so a boolean series was discarded as if it were all gaps. Booleans now take
-  part in the arithmetic as `1`/`0` (thanks to @theshengfui, ioBroker/ioBroker.sql#360)
+- (@DutchmanNL) Fixed `average`, `total`, `min`, `max`, `minmax`, `percentile` and `quantile` returning `null` for
+  boolean states: they arrive as real `true`/`false`, and `parseFloat(true)` is `NaN`, so a boolean series was
+  discarded as if it were all gaps. Booleans now take part in the arithmetic as `1`/`0`
+  (thanks to @theshengfui, ioBroker/ioBroker.sql#360)
+- (@GermanBluefox) Fixed `integral` reporting `0` for boolean states: it reads its own values and did so with a bare
+  `parseFloat`, so it was not covered by the fix above and a switch that was on all day reported no on-time at all
+- (@GermanBluefox) Fixed `minmax` returning a mixture of booleans and numbers for a boolean series: `start` and `end`
+  kept the raw value while `min` and `max` were already numbers. All four are now numbers, as `val: number | null`
+  promises
+- (@GermanBluefox) `calcDiff` and the integral interpolation no longer depend on JavaScript coercing `true` to `1`
+  in an addition, so `integralTotal` is correct by construction instead of by accident
 
 ## 1.0.1 (2026-08-26)
 - (@joltcoke) Fixed `average` and `total` returning `null` for every interval that contains a `null` value:

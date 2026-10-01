@@ -23,19 +23,23 @@ export function calcDiff(oldVal: IobDataEntry, newVal: IobDataEntry): { square: 
     if (deltaT < 0) {
         return { square: 0, deltaT: 0 };
     }
-    const square = ((newVal.val || 0) + (oldVal.val || 0)) * (deltaT * 0.5);
+    // `toNumber` keeps this correct for booleans and gaps alike - a raw `true` would only work here
+    // by accident, because JavaScript coerces it to 1 in an addition.
+    const square = ((toNumber(newVal.val) ?? 0) + (toNumber(oldVal.val) ?? 0)) * (deltaT * 0.5);
 
     return { square, deltaT };
 }
 
 function interpolate2points(p1: IobDataEntry, p2: IobDataEntry, ts: number): number {
     const dx = p2.ts - p1.ts;
-    // threat null as zero
-    const dy = (p2.val || 0) - (p1.val || 0);
+    // treat null as zero
+    const y1 = toNumber(p1.val) ?? 0;
+    const y2 = toNumber(p2.val) ?? 0;
+    const dy = y2 - y1;
     if (!dx) {
-        return p1.val!;
+        return y1;
     }
-    return (dy * (ts - p1.ts)) / dx + p1.val!;
+    return (dy * (ts - p1.ts)) / dx + y1;
 }
 
 export function initAggregate(
@@ -367,10 +371,10 @@ function aggregationLogic(data: IobDataEntry, index: number, options: InternalHi
             options.processing[index].max.val = num;
 
             options.processing[index].start.ts = data.ts;
-            options.processing[index].start.val = data.val;
+            options.processing[index].start.val = num;
 
             options.processing[index].end.ts = data.ts;
-            options.processing[index].end.val = data.val;
+            options.processing[index].end.val = num;
         } else {
             if (num !== null) {
                 if (options.processing[index].min.val === null || options.processing[index].max.val === null) {
@@ -389,7 +393,7 @@ function aggregationLogic(data: IobDataEntry, index: number, options: InternalHi
                 }
                 if (data.ts > options.processing[index].end.ts!) {
                     options.processing[index].end.ts = data.ts;
-                    options.processing[index].end.val = data.val;
+                    options.processing[index].end.val = num;
                 }
             } else {
                 // a trailing gap is reported as such, but it is neither the minimum nor the maximum
@@ -776,17 +780,19 @@ export function finishAggregationForIntegral(options: InternalHistoryOptions): v
                 continue;
             }
 
-            // Read segment start and end values (treat null as 0)
-            let valStart = parseFloat(integralDataPoints[kk].val as unknown as string) || 0;
+            // Read segment start and end values (treat a gap as 0). `toNumber` instead of a bare
+            // `parseFloat`, so that booleans count as 1/0 here too - `parseFloat(true)` is `NaN` and
+            // would have made every boolean segment contribute 0 to the integral.
+            let valStart = toNumber(integralDataPoints[kk].val) ?? 0;
             // End value is the next value, or if none, assume "linearity"
             let valEnd =
-                parseFloat(
-                    (integralDataPoints[kk + 1]
+                toNumber(
+                    integralDataPoints[kk + 1]
                         ? integralDataPoints[kk + 1].val
                         : options.integralDataPoints![k + 1] && options.integralDataPoints![k + 1][0]
                           ? options.integralDataPoints![k + 1][0].val
-                          : valStart) as unknown as string,
-                ) || 0;
+                          : valStart,
+                ) ?? 0;
 
             // Accumulate integral according to interpolation mode
             if (options.integralInterpolation !== 'linear' || valStart === valEnd) {

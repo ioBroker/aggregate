@@ -59,7 +59,7 @@
     "CHANGELOG.md"
   ],
   "dependencies": {
-    "@iobroker/types": "^7.2.2"
+    "@iobroker/types": "^7.2.3"
   },
   "devDependencies": {
     "@alcalzone/release-script": "^5.2.1",
@@ -67,11 +67,11 @@
     "@iobroker/eslint-config": "^2.3.4",
     "@tsconfig/node22": "^22.0.6",
     "@types/mocha": "^10.0.10",
-    "@types/node": "^22.20.1",
+    "@types/node": "^22.20.4",
     "c8": "^12.0.0",
-    "mocha": "^12.0.0",
-    "tsx": "^4.23.12",
-    "typescript": "^6.0.3"
+    "mocha": "^12.0.3",
+    "tsx": "^4.23.15",
+    "typescript": "~6.0.3"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
