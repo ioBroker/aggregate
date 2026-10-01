@@ -273,12 +273,19 @@ export function aggregation(
  * them. `parseFloat(null)` is `NaN`, and a single `NaN` added to an accumulator poisons the whole
  * interval - and survives every later `=== null` check afterwards, because `NaN !== null`.
  *
+ * Boolean states arrive here as real `true`/`false`: `ioBroker.history` stores raw states, and some
+ * SQL drivers return booleans for their boolean column. `parseFloat(true)` is `NaN` too, so without
+ * the explicit mapping below a boolean series would be silently skipped as if it were all gaps.
+ *
  * @param val value of one data point
  * @returns the value as a finite number, or `null` if it marks a gap and must be skipped
  */
-function toNumber(val: number | null | undefined): number | null {
+function toNumber(val: number | boolean | null | undefined): number | null {
     if (val === null || val === undefined) {
         return null;
+    }
+    if (typeof val === 'boolean') {
+        return val ? 1 : 0;
     }
     const num = parseFloat(val as unknown as string);
     return Number.isFinite(num) ? num : null;

@@ -4,6 +4,11 @@
     Placeholder for the next version (at the beginning of the line):
     ## **WORK IN PROGRESS**
 -->
+## **WORK IN PROGRESS**
+- (@DutchmanNL) Fixed every aggregate returning `null` for boolean states: they arrive as real `true`/`false`,
+  and `parseFloat(true)` is `NaN`, so a boolean series was discarded as if it were all gaps. Booleans now take
+  part in the arithmetic as `1`/`0` (thanks to @theshengfui, ioBroker/ioBroker.sql#360)
+
 ## 1.0.1 (2026-08-26)
 - (@joltcoke) Fixed `average` and `total` returning `null` for every interval that contains a `null` value:
   `parseFloat(null)` is `NaN` and poisoned the sum of the whole interval (thanks to @joltcoke,

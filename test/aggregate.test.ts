@@ -369,6 +369,66 @@ describe('aggregation of gaps', () => {
     });
 });
 
+describe('aggregation of boolean values', () => {
+    // Boolean states reach the aggregator as real `true`/`false` (ioBroker.history stores raw states,
+    // and some SQL drivers return booleans for their boolean column). `parseFloat(true)` is `NaN`, so
+    // they used to be discarded like gaps and a boolean series aggregated to `null`.
+    // See ioBroker/ioBroker.sql#360.
+    const base: GetHistoryOptions = {
+        start: 0,
+        end: 1000,
+        step: 100,
+        limit: 2000,
+        removeBorderValues: true,
+    };
+    // one bucket (0..100): true, false, true => 1, 0, 1
+    const booleans = [
+        { ts: 10, val: true },
+        { ts: 20, val: false },
+        { ts: 30, val: true },
+    ] as unknown as IobDataEntry[];
+
+    it('averages booleans as 1 and 0', () => {
+        // (1 + 0 + 1) / 3, rounded to the aggregator's default precision
+        assert.deepStrictEqual(run({ ...base, aggregate: 'average' }, [...booleans]), [{ ts: 50, val: 0.67 }]);
+    });
+
+    it('sums booleans as 1 and 0', () => {
+        assert.deepStrictEqual(run({ ...base, aggregate: 'total' }, [...booleans]), [{ ts: 50, val: 2 }]);
+    });
+
+    it('takes the maximum of a boolean series', () => {
+        assert.deepStrictEqual(run({ ...base, aggregate: 'max' }, [...booleans]), [{ ts: 50, val: 1 }]);
+    });
+
+    it('takes the minimum of a boolean series', () => {
+        assert.deepStrictEqual(run({ ...base, aggregate: 'min' }, [...booleans]), [{ ts: 50, val: 0 }]);
+    });
+
+    it('does not treat false as a gap', () => {
+        // `false` is a real value, so the divisor of the average must count it
+        assert.deepStrictEqual(
+            run({ ...base, aggregate: 'average' }, [
+                { ts: 10, val: false },
+                { ts: 20, val: false },
+            ] as unknown as IobDataEntry[]),
+            [{ ts: 50, val: 0 }],
+        );
+    });
+
+    it('still treats a real gap in a boolean series as a gap', () => {
+        // two real booleans (1 and 1) and one gap: 2 / 2, not 2 / 3
+        assert.deepStrictEqual(
+            run({ ...base, aggregate: 'average' }, [
+                { ts: 10, val: true },
+                { ts: 20, val: null },
+                { ts: 30, val: true },
+            ] as unknown as IobDataEntry[]),
+            [{ ts: 50, val: 1 }],
+        );
+    });
+});
+
 describe('aggregation with quantiles', () => {
     const base: GetHistoryOptions = {
         start: 0,
