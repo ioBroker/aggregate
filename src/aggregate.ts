@@ -1583,7 +1583,13 @@ export function sendResponseCounter(
             msg.callback,
         );
     }
-    const data: IobDataEntry[] = dataOrError;
+    // A null is a gap marker, not a reading of zero. ioBroker.sql writes them at its start/stop
+    // boundaries ("Write NULL values on start/stop boundaries"), and the arithmetic below has no
+    // concept of them: `null` coerces to 0, so a restart inside the window looked like the counter
+    // dropping to zero and climbing back and added a whole meter reading to the result, while one
+    // before the window made the boundary interpolation start from 0. Dropping them first is also
+    // what the queries feeding this already intend - they carry `AND val IS NOT NULL`.
+    const data: IobDataEntry[] = dataOrError.filter(entry => entry?.val !== null && entry?.val !== undefined);
 
     if (data[0] && data[1]) {
         // first | start          | afterFirst | ...... | last | end            | afterLast

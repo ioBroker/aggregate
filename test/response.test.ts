@@ -172,6 +172,58 @@ describe('sendResponseCounter', () => {
         assert.deepStrictEqual(sent[0].payload, { result: 900, sessionId: 7 });
     });
 
+    // ioBroker.sql writes a null at every start/stop boundary ("Write NULL values on start/stop
+    // boundaries"). Those rows mark a gap - they are not a reading of zero.
+    it('ignores a null written while the adapter was restarted inside the window', () => {
+        const { adapter, sent } = createAdapter();
+        const data: IobDataEntry[] = [
+            { ts: 1000, val: 100 },
+            { ts: 3000, val: null }, // adapter stopped here
+            { ts: 5000, val: 110 },
+        ];
+        // the counter went from 100 to 110, so 10 - not 110, which is what counting the null as a
+        // drop to zero and back used to produce
+        sendResponseCounter(adapter, msg, { start: 0, end: 6000, sessionId: 7 }, data);
+        assert.deepStrictEqual(sent[0].payload, { result: 10, sessionId: 7 });
+    });
+
+    it('ignores a null that sits just before the window', () => {
+        const { adapter, sent } = createAdapter();
+        const data: IobDataEntry[] = [
+            { ts: 9500, val: null }, // boundary marker before the window
+            { ts: 11000, val: 100 },
+            { ts: 12000, val: 200 },
+            { ts: 13000, val: 10 }, // reset
+            { ts: 14000, val: 110 },
+        ];
+        // 100 up to the reset and 100 after it. The null used to make the start interpolation
+        // compute from 0 and inflate the result by a fraction of the first value.
+        sendResponseCounter(adapter, msg, { start: 10000, end: 15000, sessionId: 7 }, data);
+        assert.deepStrictEqual(sent[0].payload, { result: 200, sessionId: 7 });
+    });
+
+    it('ignores a null that sits after the window', () => {
+        const { adapter, sent } = createAdapter();
+        const data: IobDataEntry[] = [
+            { ts: 1000, val: 100 },
+            { ts: 5000, val: 110 },
+            { ts: 7000, val: null }, // the adapter stopped after the window
+        ];
+        sendResponseCounter(adapter, msg, { start: 0, end: 6000, sessionId: 7 }, data);
+        assert.deepStrictEqual(sent[0].payload, { result: 10, sessionId: 7 });
+    });
+
+    it('answers with 0 when every value is null', () => {
+        const { adapter, sent } = createAdapter();
+        const data: IobDataEntry[] = [
+            { ts: 1000, val: null },
+            { ts: 2000, val: null },
+        ];
+        // nothing is left after filtering, which is the same as having no data
+        sendResponseCounter(adapter, msg, { start: 0, end: 3000, sessionId: 7 }, data);
+        assert.deepStrictEqual(sent[0].payload, { result: 0, step: null, sessionId: 7 });
+    });
+
     it('interpolates the counter onto the requested start', () => {
         const { adapter, sent } = createAdapter();
         const data: IobDataEntry[] = [

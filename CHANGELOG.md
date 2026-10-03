@@ -4,6 +4,13 @@
     Placeholder for the next version (at the beginning of the line):
     ## **WORK IN PROGRESS**
 -->
+## **WORK IN PROGRESS**
+- (@GermanBluefox) Fixed `getCounter` counting a `null` as a reading of zero. A `null` marks a gap - ioBroker.sql
+  writes one at every start/stop boundary - but the arithmetic coerced it to `0`, so an adapter restart inside the
+  queried window looked like the counter dropping to zero and climbing back and added a whole meter reading to the
+  result, and a `null` just before the window made the start interpolation compute from `0`
+  (ioBroker/ioBroker.sql#577)
+
 ## 1.0.2 (2026-10-01)
 - (@DutchmanNL) Fixed `average`, `total`, `min`, `max`, `minmax`, `percentile` and `quantile` returning `null` for
   boolean states: they arrive as real `true`/`false`, and `parseFloat(true)` is `NaN`, so a boolean series was
