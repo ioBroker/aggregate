@@ -4,7 +4,7 @@
     Placeholder for the next version (at the beginning of the line):
     ## **WORK IN PROGRESS**
 -->
-## **WORK IN PROGRESS**
+## 1.0.3 (2026-10-03)
 - (@GermanBluefox) Fixed `getCounter` counting a `null` as a reading of zero. A `null` marks a gap - ioBroker.sql
   writes one at every start/stop boundary - but the arithmetic coerced it to `0`, so an adapter restart inside the
   queried window looked like the counter dropping to zero and climbing back and added a whole meter reading to the
