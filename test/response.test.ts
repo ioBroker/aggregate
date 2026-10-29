@@ -120,6 +120,32 @@ describe('sendResponse', () => {
         });
     });
 
+    it('aggregates into the intervals given by the borders', () => {
+        const { adapter, sent } = createAdapter();
+        const data: IobDataEntry[] = [
+            { ts: 1010, val: 10 },
+            { ts: 1020, val: 20 },
+            { ts: 1150, val: 5 },
+            { ts: 1700, val: 1 },
+        ];
+        // An old client sends `count` as well, so an adapter without the borders still answers
+        const options: GetHistoryOptions = {
+            start: 1000,
+            end: 2000,
+            count: 2,
+            limit: 2,
+            aggregate: 'max',
+            removeBorderValues: true,
+            sessionId: 7,
+            intervalBorders: [1000, 1100, 2000],
+        };
+        sendResponse(adapter, msg, 'test.0.value', options, data, Date.now());
+        assert.deepStrictEqual(sent[0].payload.result, [
+            { ts: 1050, val: 20 },
+            { ts: 1550, val: 5 },
+        ]);
+    });
+
     it('falls back to the first timestamp if no start was requested', () => {
         const { adapter, sent } = createAdapter();
         const options: GetHistoryOptions = { end: 2000, step: 100, limit: 2000, aggregate: 'average' };

@@ -4,6 +4,15 @@
     Placeholder for the next version (at the beginning of the line):
     ## **WORK IN PROGRESS**
 -->
+## **WORK IN PROGRESS**
+- (@GermanBluefox) Added the `getHistory` option `intervalBorders`: the client sends the borders of the intervals
+  itself, e.g. the local midnights of a chart with one bar per day. `count` and `step` split the range into equally
+  long intervals, so after a switch of the daylight saving time every interval ended an hour away from the midnight
+  and a value written at 23:59:59 was shown on the next day (ioBroker/ioBroker.echarts#1311). The adapters take it
+  over with the new `parseIntervalBorders`; the integral over such borders respects `integralUnit` like a fixed step
+- (@GermanBluefox) Data that does not arrive sorted by time lands in the right smart interval now. The interval was
+  searched only forwards from the one of the previous data point, so an older value was put into a later interval
+
 ## 1.0.3 (2026-10-03)
 - (@GermanBluefox) Fixed `getCounter` counting a `null` as a reading of zero. A `null` marks a gap - ioBroker.sql
   writes one at every start/stop boundary - but the arithmetic coerced it to `0`, so an adapter restart inside the

@@ -76,8 +76,8 @@ adapter.on('message', msg => {
 `integral` supports two interpolations: `none` (default, the value is held until the next data point)
 and `linear` (a straight line is drawn between two data points).
 
-> **Note:** `integralUnit` is only applied to the fixed-step integral. If smart intervals are used, the
-> integral is always returned in _value × hours_, exactly like `integralTotal`.
+> **Note:** `integralUnit` is applied to the fixed-step integral and to `intervalBorders`. If smart intervals are
+> handed to `initAggregate`, the integral is always returned in _value × hours_, exactly like `integralTotal`.
 
 ## Smart intervals
 
@@ -105,6 +105,47 @@ const options = initAggregate(
 The daylight saving time is resolved via the **local** time zone of the process, `timeZone` only gives
 the offset of the standard (winter) time in hours — `1` for Germany.
 
+## Interval borders
+
+A client of `getHistory` usually wants the intervals of **its own** time zone, e.g. a chart with one bar per
+local day. `count` or `step` split the range into equally long intervals, so every interval after a switch of the
+daylight saving time ends an hour away from the midnight, and a value written at 23:59:59 lands in the next day.
+Instead, the client can send the borders of the intervals itself:
+
+```ts
+sendTo('sql.0', 'getHistory', {
+    id: 'javascript.0.consumption',
+    options: {
+        // the local midnights of 19.10. to 28.10.2026, the 25th has 25 hours
+        intervalBorders: [/* 19.10. 00:00 */ 1792357200000, /* ... */ /* 28.10. 00:00 */ 1793138400000],
+        aggregate: 'total',
+        // still sent, so an adapter that does not know the borders answers with the old fixed step
+        start: 1792357200000,
+        end: 1793138400000,
+        count: 9,
+    },
+});
+```
+
+`n + 1` strictly ascending borders give `n` intervals `[borders[i], borders[i + 1])`, and `start` and `end` are
+taken from the first and the last border. Every result carries the middle of its interval as timestamp. Borders
+that are not valid or that give more intervals than `limit` are ignored, and the fixed step is used.
+
+The adapters copy the options of the message field by field, so they must take the borders over, ideally with
+`parseIntervalBorders` and before they query the database for `start` and `end`:
+
+```ts
+const intervalBorders = parseIntervalBorders(msg.message.options.intervalBorders, options.limit);
+if (intervalBorders) {
+    options.intervalBorders = intervalBorders;
+    options.start = intervalBorders[0];
+    options.end = intervalBorders[intervalBorders.length - 1];
+}
+```
+
+Data that was pre-aggregated by the database (`preAggregated`) is passed through untouched, so the borders have
+no effect there.
+
 ## API
 
 | Export                      | Description                                                                 |
@@ -117,6 +158,7 @@ the offset of the standard (winter) time in hours — `1` for Germany.
 | `sendResponseCounter`       | the `getCounter` answer: the sum of all increases of a counter              |
 | `calcDiff`                  | the trapezoid between two data points, in _value × hours_                   |
 | `sortByTs`                  | sort comparator for `IobDataEntry`                                          |
+| `parseIntervalBorders`      | validates the `intervalBorders` of a `getHistory` request                   |
 | `getSmartIntervals`         | calendar-aligned intervals per hour, day or month                           |
 | `HSmartDate`                | a date that can be advanced hour by hour over DST and month borders         |
 

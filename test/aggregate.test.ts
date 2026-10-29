@@ -4,6 +4,7 @@ import {
     calcDiff,
     finishAggregation,
     initAggregate,
+    parseIntervalBorders,
     sortByTs,
     type GetHistoryOptions,
     type IobDataEntry,
@@ -746,5 +747,180 @@ describe('aggregation over smart intervals', () => {
 
         assert.strictEqual(options.result!.length, 1);
         assert.ok(Math.abs(options.result![0].val! - 10) < 0.001, `expected ~10, got ${options.result![0].val}`);
+    });
+});
+
+describe('parseIntervalBorders', () => {
+    it('accepts ascending numbers', () => {
+        assert.deepStrictEqual(parseIntervalBorders([0, 100, 250]), [0, 100, 250]);
+    });
+
+    it('converts numbers that arrived as strings', () => {
+        assert.deepStrictEqual(parseIntervalBorders(['0', '100']), [0, 100]);
+    });
+
+    it('rejects everything that does not describe at least one interval', () => {
+        assert.strictEqual(parseIntervalBorders(undefined), undefined);
+        assert.strictEqual(parseIntervalBorders('0,100'), undefined);
+        assert.strictEqual(parseIntervalBorders([]), undefined);
+        assert.strictEqual(parseIntervalBorders([100]), undefined);
+    });
+
+    it('rejects borders that are not strictly ascending', () => {
+        assert.strictEqual(parseIntervalBorders([0, 100, 100]), undefined);
+        assert.strictEqual(parseIntervalBorders([0, 200, 100]), undefined);
+    });
+
+    it('rejects borders that are not finite numbers', () => {
+        assert.strictEqual(parseIntervalBorders([0, null, 200]), undefined);
+        assert.strictEqual(parseIntervalBorders([0, 'abc']), undefined);
+        assert.strictEqual(parseIntervalBorders([0, Infinity]), undefined);
+    });
+
+    it('rejects more intervals than the limit allows', () => {
+        assert.strictEqual(parseIntervalBorders([0, 1, 2, 3], 2), undefined);
+        assert.deepStrictEqual(parseIntervalBorders([0, 1, 2], 2), [0, 1, 2]);
+    });
+});
+
+describe('aggregation over interval borders', () => {
+    /** Local midnights from the given day of October 2026 up to and including the last one */
+    function octoberMidnights(from: number, to: number): number[] {
+        const borders: number[] = [];
+        for (let date = from; date <= to; date++) {
+            borders.push(new Date(2026, 9, date).getTime());
+        }
+        return borders;
+    }
+
+    /** One value per day of October 2026, written at 23:59:59 local time, like a daily consumption */
+    function dailyValues(from: number, to: number): IobDataEntry[] {
+        const data: IobDataEntry[] = [];
+        for (let date = from; date <= to; date++) {
+            data.push({ ts: new Date(2026, 9, date, 23, 59, 59).getTime(), val: date });
+        }
+        return data;
+    }
+
+    it('takes start, end and the intervals from the borders', () => {
+        const options = initAggregate({ start: 5, end: 500, count: 7, limit: 2000, intervalBorders: [0, 100, 300] });
+        assert.strictEqual(options.start, 0);
+        assert.strictEqual(options.end, 300);
+        assert.deepStrictEqual(options.timeIntervals, [
+            { start: 0, end: 100 },
+            { start: 100, end: 300 },
+        ]);
+        assert.strictEqual(options.maxIndex, 1);
+    });
+
+    it('falls back to the step if the borders are invalid', () => {
+        const options = initAggregate({ start: 0, end: 1000, count: 10, limit: 2000, intervalBorders: [0, 0] });
+        assert.strictEqual(options.timeIntervals, undefined);
+        assert.strictEqual(options.intervalBorders, undefined);
+        assert.strictEqual(options.step, 100);
+    });
+
+    it('keeps every day in its own interval over the end of the daylight saving time', () => {
+        // ioBroker/ioBroker.echarts#1311: 25.10.2026 has 25 hours. With a fixed step of (end - start) / count every
+        // interval after it ended an hour before the local midnight, so the value of 23:59:59 slipped into the
+        // interval of the next day and the 25th stayed empty.
+        const borders = octoberMidnights(19, 28);
+        const result = run(
+            {
+                start: borders[0],
+                end: borders[borders.length - 1],
+                aggregate: 'max',
+                removeBorderValues: true,
+                intervalBorders: borders,
+            },
+            dailyValues(19, 27),
+        );
+
+        assert.strictEqual(result.length, 9);
+        for (let i = 0; i < result.length; i++) {
+            assert.ok(
+                result[i].ts >= borders[i] && result[i].ts < borders[i + 1],
+                `the value of day ${i} lies within its day`,
+            );
+            assert.strictEqual(new Date(result[i].ts).getDate(), result[i].val, 'every day carries its own value');
+        }
+        const day25 = result.find(point => point.val === 25)!;
+        assert.strictEqual(day25.ts, borders[6] + 12.5 * HOUR, 'the middle of the 25 hours long day');
+    });
+
+    it('shows the problem with a fixed step over the same range', () => {
+        const borders = octoberMidnights(19, 28);
+        const result = run(
+            {
+                start: borders[0],
+                end: borders[borders.length - 1],
+                count: borders.length - 1,
+                aggregate: 'max',
+                removeBorderValues: true,
+            },
+            dailyValues(19, 27),
+        );
+        assert.ok(
+            result.some(point => new Date(point.ts).getDate() !== point.val),
+            'a fixed step moves at least one value into the next day',
+        );
+    });
+
+    it('builds months of their real length', () => {
+        const borders = [new Date(2026, 0, 1), new Date(2026, 1, 1), new Date(2026, 2, 1), new Date(2026, 3, 1)].map(
+            date => date.getTime(),
+        );
+        const result = run({ aggregate: 'total', removeBorderValues: true, intervalBorders: borders }, [
+            { ts: new Date(2026, 0, 31, 23, 59).getTime(), val: 1 },
+            { ts: new Date(2026, 1, 1, 0, 1).getTime(), val: 10 },
+            { ts: new Date(2026, 1, 28, 23, 59).getTime(), val: 10 },
+            { ts: new Date(2026, 2, 31, 23, 59).getTime(), val: 100 },
+        ]);
+        assert.deepStrictEqual(
+            result.map(point => point.val),
+            [1, 20, 100],
+        );
+    });
+
+    it('sorts data that does not arrive in order into the right interval', () => {
+        const result = run({ aggregate: 'total', removeBorderValues: true, intervalBorders: [0, 100, 200, 300] }, [
+            { ts: 250, val: 100 },
+            { ts: 50, val: 1 },
+            { ts: 150, val: 10 },
+            { ts: 60, val: 1 },
+            { ts: 260, val: 100 },
+        ]);
+        assert.deepStrictEqual(result, [
+            { ts: 50, val: 2 },
+            { ts: 150, val: 10 },
+            { ts: 250, val: 200 },
+        ]);
+    });
+
+    it('reports the integral in the requested unit like a fixed step does', () => {
+        const data: IobDataEntry[] = [
+            { ts: -1000, val: 10 },
+            { ts: 2 * HOUR, val: 10 },
+        ];
+        const common: GetHistoryOptions = {
+            aggregate: 'integral',
+            integralUnit: 60,
+            removeBorderValues: true,
+        };
+        const withStep = run(
+            { ...common, start: 0, end: 2 * HOUR, step: HOUR },
+            data.map(point => ({ ...point })),
+        );
+        const withBorders = run(
+            { ...common, intervalBorders: [0, HOUR, 2 * HOUR] },
+            data.map(point => ({ ...point })),
+        );
+
+        assert.strictEqual(withBorders.length, withStep.length);
+        for (let i = 0; i < withStep.length; i++) {
+            // 10 over one hour in minutes. The smart intervals cut 1 ms off at their end
+            assert.ok(Math.abs(withStep[i].val! - 600) < 0.01, `step: expected ~600, got ${withStep[i].val}`);
+            assert.ok(Math.abs(withBorders[i].val! - 600) < 0.01, `borders: expected ~600, got ${withBorders[i].val}`);
+        }
     });
 });

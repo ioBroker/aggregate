@@ -42,6 +42,66 @@ function interpolate2points(p1: IobDataEntry, p2: IobDataEntry, ts: number): num
     return (dy * (ts - p1.ts)) / dx + y1;
 }
 
+/**
+ * Validate the `intervalBorders` of a `getHistory` request.
+ *
+ * The adapters take the options field by field from the message, so they can use this to take the borders over
+ * and to query the database for exactly the range the borders cover.
+ *
+ * @param borders the raw value from the message
+ * @param limit maximal number of intervals. Ignored if not a positive number
+ * @returns the borders as numbers, or `undefined` if they cannot be used
+ */
+export function parseIntervalBorders(borders: unknown, limit?: number): number[] | undefined {
+    if (!Array.isArray(borders) || borders.length < 2) {
+        return undefined;
+    }
+    if (limit && limit > 0 && borders.length - 1 > limit) {
+        return undefined;
+    }
+    const result: number[] = [];
+    for (let i = 0; i < borders.length; i++) {
+        // A request that went through JSON, e.g. from simple-api, can carry the numbers as strings
+        const ts = typeof borders[i] === 'string' ? Number(borders[i]) : borders[i];
+        if (typeof ts !== 'number' || !Number.isFinite(ts) || (i && ts <= result[i - 1])) {
+            return undefined;
+        }
+        result.push(ts);
+    }
+    return result;
+}
+
+/**
+ * Find the interval that holds the given timestamp. The timestamp must lie between the start of the first and the
+ * end of the last interval.
+ *
+ * The data normally arrives sorted, so the interval of the previous data point or the one after it is checked first.
+ * Everything else is found by a binary search, so data that is not sorted lands in the right interval too.
+ *
+ * @param intervals contiguous intervals, ascending
+ * @param ts timestamp to look for
+ * @param hint index of the interval of the previous data point
+ */
+function findTimeInterval(intervals: TimeInterval[], ts: number, hint: number): number {
+    if (intervals[hint] && intervals[hint].start <= ts && ts < intervals[hint].end) {
+        return hint;
+    }
+    if (intervals[hint + 1] && intervals[hint + 1].start <= ts && ts < intervals[hint + 1].end) {
+        return hint + 1;
+    }
+    let low = 0;
+    let high = intervals.length - 1;
+    while (low < high) {
+        const middle = (low + high + 1) >> 1;
+        if (intervals[middle].start <= ts) {
+            low = middle;
+        } else {
+            high = middle - 1;
+        }
+    }
+    return low;
+}
+
 export function initAggregate(
     initialOptions: GetHistoryOptions,
     id?: string,
@@ -55,6 +115,28 @@ export function initAggregate(
         options.log = () => {};
         // To save the complex outputs
         options.logDebug = false;
+    }
+
+    // The caller can hand over the borders of the intervals itself, e.g. the local midnights of a chart with one bar
+    // per day. The caller knows its own time zone, and a day around the switch of the daylight saving time has 23 or
+    // 25 hours, so such intervals cannot be expressed by one fixed step.
+    if (timeIntervals) {
+        options.intervalBorders = undefined;
+    } else if (options.intervalBorders !== undefined) {
+        const borders = parseIntervalBorders(options.intervalBorders, options.limit);
+        options.intervalBorders = borders;
+        if (borders) {
+            timeIntervals = [];
+            for (let i = 1; i < borders.length; i++) {
+                timeIntervals.push({ start: borders[i - 1], end: borders[i] });
+            }
+            options.start = borders[0];
+            options.end = borders[borders.length - 1];
+            // Not used to find the intervals, but it must not trigger the limit below
+            options.step = (options.end - options.start) / timeIntervals.length;
+        } else if (options.logDebug && options.log) {
+            options.log('Initialize: intervalBorders are invalid and ignored');
+        }
     }
 
     // step; // 1 Step is 1 second
@@ -185,21 +267,13 @@ export function aggregation(
                 index = 0;
             } else if (dataTs >= options.end!) {
                 index = options.timeIntervals.length + 1;
-            } else if (dataTs >= options.timeIntervals[options.currentTimeInterval!].end) {
-                // Look for the next interval
-                options.currentTimeInterval!++;
-                while (options.currentTimeInterval! < options.timeIntervals.length) {
-                    if (
-                        options.timeIntervals[options.currentTimeInterval!].start <= dataTs &&
-                        dataTs < options.timeIntervals[options.currentTimeInterval!].end
-                    ) {
-                        break;
-                    }
-                    options.currentTimeInterval!++;
-                }
-                index = options.currentTimeInterval! + 1;
             } else {
-                index = options.currentTimeInterval! + 1;
+                options.currentTimeInterval = findTimeInterval(
+                    options.timeIntervals,
+                    dataTs,
+                    options.currentTimeInterval!,
+                );
+                index = options.currentTimeInterval + 1;
             }
         } else {
             // Our intervals are equidistant and we can calculate them
@@ -637,6 +711,17 @@ export function finishAggregationForIntegral(options: InternalHistoryOptions): v
     // If timeIntervals are used, delegate to the specialized implementation.
     if (options.timeIntervals) {
         finishAggregationForIntegralEx(options);
+        if (options.intervalBorders && options.result) {
+            // The specialized implementation reports value x hours. Borders that came with a `getHistory` request
+            // must give the same unit as a fixed step does, otherwise the result changes by the factor 60 as soon
+            // as a client sends them.
+            const factor = 3_600_000 / options.integralUnit!;
+            for (const point of options.result) {
+                if (point.val !== null) {
+                    point.val *= factor;
+                }
+            }
+        }
         return;
     }
 
