@@ -87,6 +87,14 @@ export interface GetHistoryOptions {
     smartType?: 'hour' | 'day' | 'month';
     /** End of smart intervals. It calculates the statistics according to real month length. If not defined, the end is "now" */
     smartEnd?: SmartDate;
+    /**
+     * Borders of the aggregation intervals in ms, strictly ascending: `n + 1` borders give `n` intervals
+     * `[borders[i], borders[i + 1])`. Use it for intervals that a fixed `step` cannot express, e.g. the local
+     * days of a chart: a day around the switch of the daylight saving time has 23 or 25 hours and a month 28 to
+     * 31 days. If valid, `start`, `end` and `step` are taken from it. It is ignored if it is not an array of at
+     * least two ascending numbers or if it holds more intervals than `limit`.
+     */
+    intervalBorders?: number[];
 
     /** number of values if aggregate is 'onchange' or number of intervals if other aggregate method. Count will be ignored if step is set, else default is 500 if not set */
     count?: number;

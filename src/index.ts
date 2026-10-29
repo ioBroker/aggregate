@@ -10,6 +10,7 @@ export {
     sendResponse,
     sendResponseCounter,
     sortByTs,
+    parseIntervalBorders,
 } from './aggregate';
 
 export { HSmartDate, getSmartIntervals } from './time';
