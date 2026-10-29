@@ -4,7 +4,7 @@
     Placeholder for the next version (at the beginning of the line):
     ## **WORK IN PROGRESS**
 -->
-## **WORK IN PROGRESS**
+## 1.1.0 (2026-10-29)
 - (@GermanBluefox) Added the `getHistory` option `intervalBorders`: the client sends the borders of the intervals
   itself, e.g. the local midnights of a chart with one bar per day. `count` and `step` split the range into equally
   long intervals, so after a switch of the daylight saving time every interval ended an hour away from the midnight
